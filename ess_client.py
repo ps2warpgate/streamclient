@@ -18,14 +18,15 @@ from services import Alert, Rabbit
 if is_docker() is False:  # Use .env file for secrets
     load_dotenv()
 
-
+LOG_LEVEL = os.getenv('LOG_LEVEL') or 'INFO'
 APP_VERSION = os.getenv('APP_VERSION') or 'undefined'
 API_KEY = os.getenv('API_KEY') or 's:example'
-LOG_LEVEL = os.getenv('LOG_LEVEL') or 'INFO'
-RABBITMQ_URL = os.getenv('RABBITMQ_URL') or None
-REDIS_URL = os.getenv('REDIS_URL') or None
-MONGODB_URL = os.getenv('MONGODB_URL') or None
 RABBITMQ_ENABLED = os.getenv('RABBITMQ_ENABLED') or 'True'
+RABBITMQ_URL = os.getenv('RABBITMQ_URL') or None
+MONGODB_URL = os.getenv('MONGODB_URL') or None
+MONGODB_DB = os.getenv('MONGODB_DB') or 'warpgate'
+MONGODB_COLLECTION = os.getenv('MONGODB_COLLECTION') or 'alerts'
+METRICS_PORT = os.getenv('METRICS_PORT') or 8000
 
 
 log = logging.getLogger('ess')
@@ -165,7 +166,10 @@ except KeyboardInterrupt:
     loop.stop()
 
 
-# if __name__ == '__main__':
-#     loop = asyncio.new_event_loop()
-#     loop.create_task(main())
-#     loop.run_forever()
+if __name__ == '__main__':
+    try:
+        loop = asyncio.new_event_loop()
+        loop.create_task(main())
+        loop.run_forever()
+    except KeyboardInterrupt:
+        pass
