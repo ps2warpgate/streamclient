@@ -135,19 +135,10 @@ async def main() -> None:
 
             # Add or remove from database
             if evt.metagame_event_state_name == 'started':
-                # await alert.create(
-                #     world=WORLD_NAMES[evt.world_id], 
-                #     instance_id=evt.instance_id, 
-                #     event_json=json_event
-                # )
                 result = await alert.create(event_data)
 
                 log.info(f'Created alert with id: {result}')
             if evt.metagame_event_state_name == 'ended' or 'cancelled':
-                # await alert.remove(
-                #     world=WORLD_NAMES[evt.world_id],
-                #     instance_id=evt.instance_id,
-                # )
                 await alert.remove(id=unique_id)
 
                 log.info(f'Removed alert {unique_id}')
