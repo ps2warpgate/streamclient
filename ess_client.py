@@ -9,6 +9,7 @@ import auraxium
 from auraxium import event
 from auraxium.endpoints import NANITE_SYSTEMS
 from dotenv import load_dotenv
+from prometheus_client import Counter, Enum, Gauge, Info, start_http_server
 
 from constants.typings import UniqueEventId
 from constants.utils import CustomFormatter, is_docker
@@ -62,23 +63,56 @@ METAGAME_STATES: Dict[int, str] = {
 }
 
 
+# metrics_server = make_asgi_app()
 rabbit = Rabbit()
 alert = Alert()
 
 
-async def main() -> None:
-    log.info(f'Starting ESS client version: {APP_VERSION}')
+alert_service = Enum(
+    name='alert_service_state', 
+    documentation='state of the alert service', 
+    states=['starting', 'running','stopped'])
+rabbit_service = Enum(
+    name='rabbit_service_state', 
+    documentation='state of the rabbitmq service', 
+    states=['starting', 'running','stopped']
+)
+total_events = Counter(
+    name='total_events',
+    documentation='total number of recieved events'
+)
+in_progress_alerts = Gauge(
+    name='in_progress_alerts',
+    documentation='number of in-progress alerts'    
+)
+last_event_time = Info(
+    name='last_alert_time',
+    documentation='timestamp of the last recieved event',    
+)
+census_status = Info(
+    name='census_status',
+    documentation='status of the census endpoint'
+)
+
+
+async def start_services():
     log.info('Starting Services...')
+
     if RABBITMQ_ENABLED == 'True':
         if not rabbit.is_ready:
+            rabbit_service.state('starting')
             await rabbit.setup(RABBITMQ_URL)
         
         log.info('RabbitMQ Service ready!')
+        rabbit_service.state('running')
     else:
         log.info('RabbitMQ Service disabled by user')
+        rabbit_service.state('stopped')
+
+    alert_service.state('stopped')
 
     if not alert.is_ready:
-        # await alert.setup(REDIS_URL)
+        alert_service.state('starting')
         await alert.setup(
             mongodb_url=MONGODB_URL,
             db='warpgate_dev',
@@ -86,6 +120,13 @@ async def main() -> None:
         )
     
     log.info('Alert Service ready!')
+    alert_service.state('running')
+
+
+async def main() -> None:
+    log.info(f'Starting ESS client version: {APP_VERSION}')
+
+    await start_services()
 
     async with auraxium.EventClient(service_id=API_KEY, ess_endpoint=NANITE_SYSTEMS) as client:
         log.info('Listening for Census Events...')
@@ -94,9 +135,10 @@ async def main() -> None:
         async def on_metagame_event(evt: event.MetagameEvent) -> None:
             unique_id = str(UniqueEventId(evt.world_id, evt.instance_id))
 
-            log.info(
-                f'Received {evt.event_name} id: {unique_id}'
-            )
+            log.info(f'Received {evt.event_name} id: {unique_id}')
+
+            total_events.inc(1)
+            last_event_time.info({'time': evt.timestamp.timestamp()})
 
             log.debug(f"""
             ESS Data:
@@ -137,28 +179,22 @@ async def main() -> None:
             if evt.metagame_event_state_name == 'started':
                 result = await alert.create(event_data)
 
-                log.info(f'Created alert with id: {result}')
-            if evt.metagame_event_state_name == 'ended' or 'cancelled':
+                log.info(f'Created alert {result}')
+            elif evt.metagame_event_state_name == 'ended' or 'cancelled':
                 await alert.remove(id=unique_id)
 
                 log.info(f'Removed alert {unique_id}')
 
     
+        census_status.info(client.endpoint_status)
+
     _ = on_metagame_event
-
-
-loop = asyncio.new_event_loop()
-loop.create_task(main())
-try:
-    loop.run_forever()
-except asyncio.exceptions.CancelledError:
-    loop.stop()
-except KeyboardInterrupt:
-    loop.stop()
 
 
 if __name__ == '__main__':
     try:
+        start_http_server(port=METRICS_PORT)
+        log.info(f'Metrics service listening on port {METRICS_PORT}')
         loop = asyncio.new_event_loop()
         loop.create_task(main())
         loop.run_forever()
