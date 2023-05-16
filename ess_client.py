@@ -20,7 +20,7 @@ if is_docker() is False:  # Use .env file for secrets
     load_dotenv()
 
 LOG_LEVEL = os.getenv('LOG_LEVEL') or 'INFO'
-APP_VERSION = os.getenv('APP_VERSION') or 'undefined'
+APP_VERSION = os.getenv('APP_VERSION') or 'dev'
 API_KEY = os.getenv('API_KEY') or 's:example'
 RABBITMQ_ENABLED = os.getenv('RABBITMQ_ENABLED') or 'True'
 RABBITMQ_URL = os.getenv('RABBITMQ_URL') or None
@@ -85,7 +85,7 @@ in_progress_alerts = Gauge(
     name='in_progress_alerts',
     documentation='number of in-progress alerts'    
 )
-last_event_time = Info(
+last_event_time = Gauge(
     name='last_alert_time',
     documentation='timestamp of the last recieved event',    
 )
@@ -138,7 +138,7 @@ async def main() -> None:
             log.info(f'Received {evt.event_name} id: {unique_id}')
 
             total_events.inc(1)
-            last_event_time.info({'time': evt.timestamp.timestamp()})
+            last_event_time.set()
 
             log.debug(f"""
             ESS Data:
@@ -185,15 +185,13 @@ async def main() -> None:
 
                 log.info(f'Removed alert {unique_id}')
 
-    
-        census_status.info(client.endpoint_status)
 
     _ = on_metagame_event
 
 
 if __name__ == '__main__':
     try:
-        start_http_server(port=METRICS_PORT)
+        start_http_server(port=int(METRICS_PORT))
         log.info(f'Metrics service listening on port {METRICS_PORT}')
         loop = asyncio.new_event_loop()
         loop.create_task(main())
