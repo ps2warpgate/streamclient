@@ -1,6 +1,5 @@
 import asyncio
 import json
-import logging
 import logging.handlers
 import os
 from typing import Dict
@@ -18,7 +17,7 @@ from services import Alert, Rabbit
 # Change secrets variables accordingly
 if is_docker() is False:  # Use .env file for secrets
     load_dotenv()
-
+# TODO: use getenv 'default' parameter
 LOG_LEVEL = os.getenv('LOG_LEVEL') or 'INFO'
 APP_VERSION = os.getenv('APP_VERSION') or 'dev'
 API_KEY = os.getenv('API_KEY') or 's:example'
@@ -29,13 +28,11 @@ MONGODB_DB = os.getenv('MONGODB_DB') or 'warpgate'
 MONGODB_COLLECTION = os.getenv('MONGODB_COLLECTION') or 'alerts'
 METRICS_PORT = os.getenv('METRICS_PORT') or 8000
 
-
 log = logging.getLogger('ess')
 log.setLevel(LOG_LEVEL)
 handler = logging.StreamHandler()
 handler.setFormatter(CustomFormatter())
 log.addHandler(handler)
-
 
 WORLD_NAMES: Dict[int, str] = {
     1: 'connery',
@@ -62,24 +59,21 @@ METAGAME_STATES: Dict[int, str] = {
     139: 'xp_bonus_changed'
 }
 
-
-# metrics_server = make_asgi_app()
 rabbit = Rabbit()
 alert = Alert()
-
 
 alert_service = Enum(
     name='alert_service_state',
     documentation='state of the alert service',
-    states=['starting', 'running','stopped'])
+    states=['starting', 'running', 'stopped'])
 rabbit_service = Enum(
     name='rabbit_service_state',
     documentation='state of the rabbitmq service',
-    states=['starting', 'running','stopped']
+    states=['starting', 'running', 'stopped']
 )
 total_events = Counter(
     name='total_events',
-    documentation='total number of recieved events'
+    documentation='total number of received events'
 )
 in_progress_alerts = Gauge(
     name='in_progress_alerts',
@@ -87,7 +81,7 @@ in_progress_alerts = Gauge(
 )
 last_event_time = Gauge(
     name='last_alert_time',
-    documentation='timestamp of the last recieved event',
+    documentation='timestamp of the last received event',
 )
 census_status = Info(
     name='census_status',
@@ -140,20 +134,6 @@ async def main() -> None:
             total_events.inc(1)
             last_event_time.set(evt.timestamp.timestamp())
 
-            log.debug(f"""
-            ESS Data:
-            Instance ID: {evt.instance_id}
-            Event ID: {evt.metagame_event_id}
-            State: {evt.metagame_event_state} ({evt.metagame_event_state_name})
-            World: {evt.world_id} ({WORLD_NAMES[evt.world_id]})
-            Zone: {evt.zone_id} ({ZONE_NAMES[evt.zone_id]})
-            NC: {evt.faction_nc}
-            TR: {evt.faction_tr}
-            VS: {evt.faction_vs}
-            XP Bonus: {evt.experience_bonus}
-            Timestamp: {evt.timestamp}
-            """)
-
             # event data as json object
             event_data = {
                 '_id': unique_id,
@@ -167,6 +147,9 @@ async def main() -> None:
                 'xp': evt.experience_bonus,
                 'timestamp': evt.timestamp.timestamp()
             }
+
+            log.debug(event_data)
+
             # Convert to string
             json_event = json.dumps(event_data)
 
@@ -181,10 +164,9 @@ async def main() -> None:
 
                 log.info(f'Created alert {result}')
             elif evt.metagame_event_state_name == 'ended' or 'cancelled':
-                await alert.remove(id=unique_id)
+                await alert.remove(event_id=unique_id)
 
                 log.info(f'Removed alert {unique_id}')
-
 
     _ = on_metagame_event
 
