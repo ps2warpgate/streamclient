@@ -138,7 +138,7 @@ async def main() -> None:
             log.info(f'Received {evt.event_name} id: {unique_id}')
 
             total_events.inc(1)
-            last_event_time.set()
+            last_event_time.set(evt.timestamp.timestamp())
 
             log.debug(f"""
             ESS Data:
