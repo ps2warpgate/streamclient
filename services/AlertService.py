@@ -32,7 +32,7 @@ class Alert():
         """
         result = await self.alert_collection.insert_one(event_data)
         return result.inserted_id
-    
+
     async def read_one(self, id: UniqueEventId):
         """Reads one alert from the database
 
@@ -44,11 +44,11 @@ class Alert():
         """
         result = await self.alert_collection.find_one({"_id": id})
         return result
-    
+
     async def read_many(self):
         # TODO: Get all alerts or alerts matching a pattern
         raise NotImplementedError
-    
+
     async def count(self) -> int:
         """Get the number of alerts currently in the database
 
@@ -57,11 +57,11 @@ class Alert():
         """
         result = await self.alert_collection.count_documents({})
         return result
-    
+
     async def count_world(self):
         # TODO: Get number of alerts for a given world
         raise NotImplementedError
-    
+
     async def remove(self, id: UniqueEventId):
         """Remove a MetagameEvent instance from the database
 
@@ -73,4 +73,3 @@ class Alert():
         """
         result = await self.alert_collection.delete_one({"_id": id})
         return result.deleted_count
-        

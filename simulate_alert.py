@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 
 from constants.utils import CustomFormatter
-from services import Alert2
+from services import Alert
 from constants.typings import UniqueEventId
 
 MONGODB_URL = os.getenv('MONGODB_URL') or None
@@ -17,7 +17,7 @@ handler.setFormatter(CustomFormatter())
 log.addHandler(handler)
 
 
-alert = Alert2()
+alert = Alert()
 
 
 async def create_and_remove_alert():
@@ -64,5 +64,3 @@ async def create_and_remove_alert():
 
 if __name__ == '__main__':
     asyncio.run(create_and_remove_alert())
-
-

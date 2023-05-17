@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "streamclient"
 version = "0.1.0"
-description = ""
+description = "Collects events from the Census Event Streaming Service"
 authors = ["wupasscat <warpgate@wupass.xyz>"]
 license = "LICENSE"
 readme = "README.md"
@@ -13,12 +13,12 @@ motor = "^3.1.2"
 auraxium = "^0.2.3"
 aio-pika = "^9.0.7"
 prometheus-client = "^0.16.0"
-aioprometheus = {extras = ["aiohttp"], version = "^23.3.0"}
 
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.0.267"
 pytest = "^7.3.1"
+pre-commit = "^3.3.1"
 
 [build-system]
 requires = ["poetry-core"]

@@ -20,7 +20,7 @@ class Rabbit:
             type=ExchangeType.DIRECT,
         )
         self.is_ready = True
-    
+
     async def publish(self, message: bytes):
         """Publishes a message to the exchange
 

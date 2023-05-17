@@ -69,12 +69,12 @@ alert = Alert()
 
 
 alert_service = Enum(
-    name='alert_service_state', 
-    documentation='state of the alert service', 
+    name='alert_service_state',
+    documentation='state of the alert service',
     states=['starting', 'running','stopped'])
 rabbit_service = Enum(
-    name='rabbit_service_state', 
-    documentation='state of the rabbitmq service', 
+    name='rabbit_service_state',
+    documentation='state of the rabbitmq service',
     states=['starting', 'running','stopped']
 )
 total_events = Counter(
@@ -83,11 +83,11 @@ total_events = Counter(
 )
 in_progress_alerts = Gauge(
     name='in_progress_alerts',
-    documentation='number of in-progress alerts'    
+    documentation='number of in-progress alerts'
 )
 last_event_time = Gauge(
     name='last_alert_time',
-    documentation='timestamp of the last recieved event',    
+    documentation='timestamp of the last recieved event',
 )
 census_status = Info(
     name='census_status',
@@ -102,7 +102,7 @@ async def start_services():
         if not rabbit.is_ready:
             rabbit_service.state('starting')
             await rabbit.setup(RABBITMQ_URL)
-        
+
         log.info('RabbitMQ Service ready!')
         rabbit_service.state('running')
     else:
@@ -118,7 +118,7 @@ async def start_services():
             db='warpgate_dev',
             collection='alerts',
         )
-    
+
     log.info('Alert Service ready!')
     alert_service.state('running')
 
@@ -130,7 +130,7 @@ async def main() -> None:
 
     async with auraxium.EventClient(service_id=API_KEY, ess_endpoint=NANITE_SYSTEMS) as client:
         log.info('Listening for Census Events...')
-        
+
         @client.trigger(event.MetagameEvent)
         async def on_metagame_event(evt: event.MetagameEvent) -> None:
             unique_id = str(UniqueEventId(evt.world_id, evt.instance_id))
@@ -169,7 +169,7 @@ async def main() -> None:
             }
             # Convert to string
             json_event = json.dumps(event_data)
-            
+
             # Publish to RabbitMQ
             if RABBITMQ_ENABLED == 'True':
                 await rabbit.publish(bytes(json_event, encoding='utf-8'))
