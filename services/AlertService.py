@@ -44,7 +44,7 @@ class Alert:
         Returns:
             `dict` document
         """
-        result = await self._alert_collection.find_one({"_id": event_id})
+        result = await self._alert_collection.find_one({"id": event_id})
         return result
 
     async def read_many(self, length: int, query: dict = None) -> list[dict]:
@@ -84,7 +84,7 @@ class Alert:
         Returns:
             `int` number of documents deleted
         """
-        result = await self._alert_collection.delete_one({"_id": event_id})
+        result = await self._alert_collection.delete_one({"id": event_id})
         return result.deleted_count
 
     async def remove_many(self, query: dict) -> int:

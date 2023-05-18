@@ -32,6 +32,7 @@ async def create_and_remove_alert():
 
     id = str(UniqueEventId(17, 123456))
 
+    # TODO: Use models.MetagameEvent instead of dict
     event_data = {
         '_id': id,
         'event_id': 123,

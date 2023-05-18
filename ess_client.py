@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 from prometheus_client import Counter, Enum, Gauge, Info, start_http_server
 from datetime import datetime
 
+from pydantic.json import pydantic_encoder
+from dataclasses import asdict
+
+import models
 from constants.typings import UniqueEventId
 from constants.utils import CustomFormatter, is_docker
 from services import Alert, Rabbit
@@ -128,7 +132,7 @@ async def purge_stale_alerts() -> None:
         log.info(f'Found {len(stale_alerts)} stale alert(s) in the database. Removing...')
         deleted_count = 0
         for i in stale_alerts:
-            deleted_count += await alert.remove(event_id=i['_id'])
+            deleted_count += await alert.remove(event_id=i['id'])
         log.info(f'Stale alerts removed: {deleted_count}')
 
 
@@ -152,33 +156,48 @@ async def main() -> None:
             total_events.inc(1)
             last_event_time.set(evt.timestamp.timestamp())
 
+            # TODO: REMOVE THIS
             # event data as json object
-            event_data = {
-                '_id': unique_id,
-                'event_id': evt.metagame_event_id,
-                'state': evt.metagame_event_state_name,
-                'world_id': evt.world_id,
-                'zone_id': evt.zone_id,
-                'nc': evt.faction_nc,
-                'tr': evt.faction_tr,
-                'vs': evt.faction_vs,
-                'xp': evt.experience_bonus,
-                'timestamp': evt.timestamp.timestamp()
-            }
+            # event_data = {
+            #     '_id': unique_id,
+            #     'event_id': evt.metagame_event_id,
+            #     'state': evt.metagame_event_state_name,
+            #     'world_id': evt.world_id,
+            #     'zone_id': evt.zone_id,
+            #     'nc': evt.faction_nc,
+            #     'tr': evt.faction_tr,
+            #     'vs': evt.faction_vs,
+            #     'xp': evt.experience_bonus,
+            #     'timestamp': evt.timestamp.timestamp()
+            # }
 
-            log.debug(event_data)
+            event_data = models.MetagameEvent(
+                id=unique_id,
+                event_id=evt.metagame_event_id,
+                state=evt.metagame_event_state_name,
+                world_id=evt.world_id,
+                zone_id=evt.zone_id,
+                nc=evt.faction_nc,
+                tr=evt.faction_tr,
+                vs=evt.faction_vs,
+                xp=evt.experience_bonus,
+                timestamp=evt.timestamp.timestamp()
+            )
 
-            # Convert to string
-            json_event = json.dumps(event_data)
+            # Convert to dictionary and json
+            dict_event = asdict(event_data)
+            json_event = json.dumps(event_data, indent=4, default=pydantic_encoder)
+
+            log.debug(dict_event)
 
             # Publish to RabbitMQ
             if RABBITMQ_ENABLED == 'True':
                 await rabbit.publish(bytes(json_event, encoding='utf-8'))
                 log.info(f'Event {unique_id} published')
-
+            # TODO: Replace result with unique_id
             # Add or remove from database
             if evt.metagame_event_state_name == 'started':
-                result = await alert.create(event_data)
+                result = await alert.create(dict_event)
 
                 log.info(f'Created alert {result}')
             elif evt.metagame_event_state_name == 'ended' or 'cancelled':
@@ -186,7 +205,7 @@ async def main() -> None:
 
                 log.info(f'Removed alert {unique_id}')
 
-    _ = on_metagame_event
+        _ = on_metagame_event
 
 
 if __name__ == '__main__':
