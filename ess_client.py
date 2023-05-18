@@ -9,6 +9,7 @@ from auraxium import event
 from auraxium.endpoints import NANITE_SYSTEMS
 from dotenv import load_dotenv
 from prometheus_client import Counter, Enum, Gauge, Info, start_http_server
+from datetime import datetime
 
 from constants.typings import UniqueEventId
 from constants.utils import CustomFormatter, is_docker
@@ -18,15 +19,16 @@ from services import Alert, Rabbit
 if is_docker() is False:  # Use .env file for secrets
     load_dotenv()
 # TODO: use getenv 'default' parameter
-LOG_LEVEL = os.getenv('LOG_LEVEL') or 'INFO'
-APP_VERSION = os.getenv('APP_VERSION') or 'dev'
-API_KEY = os.getenv('API_KEY') or 's:example'
-RABBITMQ_ENABLED = os.getenv('RABBITMQ_ENABLED') or 'True'
-RABBITMQ_URL = os.getenv('RABBITMQ_URL') or None
-MONGODB_URL = os.getenv('MONGODB_URL') or None
-MONGODB_DB = os.getenv('MONGODB_DB') or 'warpgate'
-MONGODB_COLLECTION = os.getenv('MONGODB_COLLECTION') or 'alerts'
-METRICS_PORT = os.getenv('METRICS_PORT') or 8000
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+APP_VERSION = os.getenv('APP_VERSION', 'dev')
+API_KEY = os.getenv('API_KEY', 's:example')
+RABBITMQ_ENABLED = os.getenv('RABBITMQ_ENABLED', 'True')
+RABBITMQ_URL = os.getenv('RABBITMQ_URL', None)
+MONGODB_URL = os.getenv('MONGODB_URL', None)
+MONGODB_DB = os.getenv('MONGODB_DB', 'warpgate')
+MONGODB_COLLECTION = os.getenv('MONGODB_COLLECTION', 'alerts')
+METRICS_PORT = os.getenv('METRICS_PORT', 8000)
+PURGE_STALE_ALERTS = os.getenv('PURGE_STALE_ALERTS', 'True')
 
 log = logging.getLogger('ess')
 log.setLevel(LOG_LEVEL)
@@ -89,7 +91,7 @@ census_status = Info(
 )
 
 
-async def start_services():
+async def start_services() -> None:
     log.info('Starting Services...')
 
     if RABBITMQ_ENABLED == 'True':
@@ -117,10 +119,26 @@ async def start_services():
     alert_service.state('running')
 
 
+async def purge_stale_alerts() -> None:
+    """Removes alerts from the database that are older than 5400s (1h30m)"""
+    max_age = datetime.utcnow().timestamp() - 5400  # Current POSIX timestamp minus 1h30m
+    # List of alerts where timestamp < max_age
+    stale_alerts = await alert.read_many(length=30, query={'timestamp': {'$lt': max_age}})
+    if len(stale_alerts) > 0:
+        log.info(f'Found {len(stale_alerts)} stale alert(s) in the database. Removing...')
+        deleted_count = 0
+        for i in stale_alerts:
+            deleted_count += await alert.remove(event_id=i['_id'])
+        log.info(f'Stale alerts removed: {deleted_count}')
+
+
 async def main() -> None:
     log.info(f'Starting ESS client version: {APP_VERSION}')
 
     await start_services()
+
+    if PURGE_STALE_ALERTS == 'True':
+        await purge_stale_alerts()
 
     async with auraxium.EventClient(service_id=API_KEY, ess_endpoint=NANITE_SYSTEMS) as client:
         log.info('Listening for Census Events...')
