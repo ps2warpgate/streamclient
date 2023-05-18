@@ -35,50 +35,66 @@ class Alert:
         result = await self._alert_collection.insert_one(event_data)
         return result.inserted_id
 
-    async def read_one(self, event_id: str):
+    async def read_one(self, event_id: str) -> dict:
         """Reads one alert from the database
 
         Args:
-            event_id: `UniqueEventId` event/document ID
+            event_id: `str` event/document ID
 
         Returns:
-            A single document
+            `dict` document
         """
         result = await self._alert_collection.find_one({"_id": event_id})
         return result
 
-    async def read_many(self, expression: str, length: int) -> list:
+    async def read_many(self, length: int, query: dict = None) -> list[dict]:
         """Reads many alerts from the database
 
         Args:
-            expression: `str` a Mongo query
             length: `int` number of documents to return
-        """
-        cursor = self._alert_collection.find(expression)
-        for document in cursor.to_list(length=length):
-            return document
-
-    async def count(self) -> int:
-        """Get the number of alerts currently in the database
+            query: `dict` (optional) a Mongo query
 
         Returns:
-            result: `int` number of documents in alert collection
+            `list[dict]` list of documents
         """
-        result = await self._alert_collection.count_documents({})
-        return result
+        cursor = self._alert_collection.find(query)
+        found_documents = []
+        for document in await cursor.to_list(length=length):
+            found_documents.append(document)
+        return found_documents
 
-    async def count_world(self):
-        # TODO: Get number of alerts for a given world
-        raise NotImplementedError
+    async def count(self, query: dict = None) -> int:
+        """Get the number of alerts currently in the database
+
+        Args:
+            query: `dict` (optional) a Mongo query
+
+        Returns:
+            `int` number of documents in alert collection
+        """
+        result = await self._alert_collection.count_documents(query)
+        return result
 
     async def remove(self, event_id: str) -> int:
         """Remove a MetagameEvent instance from the database
 
         Args:
-            event_id: `UniqueEventId` ID of the event being removed
+            event_id: `str` ID of the event being removed
 
         Returns:
-            deleted_count: `int` number of documents deleted
+            `int` number of documents deleted
         """
         result = await self._alert_collection.delete_one({"_id": event_id})
+        return result.deleted_count
+
+    async def remove_many(self, query: dict) -> int:
+        """Remove many MetagameEvents from the database
+
+        Args:
+            query: `dict` a Mongo query
+
+        Returns:
+            `int` number of documents deleted
+        """
+        result = await self._alert_collection.delete_many(query)
         return result.deleted_count
