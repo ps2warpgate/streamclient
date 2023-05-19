@@ -2,19 +2,17 @@ import asyncio
 import json
 import logging.handlers
 import os
-from typing import Dict
+from dataclasses import asdict
+from datetime import datetime
 
 import auraxium
 from auraxium import event
 from auraxium.endpoints import NANITE_SYSTEMS
 from dotenv import load_dotenv
 from prometheus_client import Counter, Enum, Gauge, Info, start_http_server
-from datetime import datetime
-
 from pydantic.json import pydantic_encoder
-from dataclasses import asdict
 
-import models
+from constants import models
 from constants.typings import UniqueEventId
 from constants.utils import CustomFormatter, is_docker
 from services import Alert, Rabbit
@@ -40,30 +38,6 @@ handler = logging.StreamHandler()
 handler.setFormatter(CustomFormatter())
 log.addHandler(handler)
 
-WORLD_NAMES: Dict[int, str] = {
-    1: 'connery',
-    10: 'miller',
-    13: 'cobalt',
-    17: 'emerald',
-    19: 'jaeger',
-    40: 'soltech'
-}
-
-ZONE_NAMES: Dict[int, str] = {
-    2: 'indar',
-    4: 'hossin',
-    6: 'amerish',
-    8: 'esamir',
-    344: 'oshur',
-}
-
-METAGAME_STATES: Dict[int, str] = {
-    135: 'started',
-    136: 'restarted',
-    137: 'cancelled',
-    138: 'ended',
-    139: 'xp_bonus_changed'
-}
 
 rabbit = Rabbit()
 alert = Alert()
@@ -156,21 +130,6 @@ async def main() -> None:
             total_events.inc(1)
             last_event_time.set(evt.timestamp.timestamp())
 
-            # TODO: REMOVE THIS
-            # event data as json object
-            # event_data = {
-            #     '_id': unique_id,
-            #     'event_id': evt.metagame_event_id,
-            #     'state': evt.metagame_event_state_name,
-            #     'world_id': evt.world_id,
-            #     'zone_id': evt.zone_id,
-            #     'nc': evt.faction_nc,
-            #     'tr': evt.faction_tr,
-            #     'vs': evt.faction_vs,
-            #     'xp': evt.experience_bonus,
-            #     'timestamp': evt.timestamp.timestamp()
-            # }
-
             event_data = models.MetagameEvent(
                 id=unique_id,
                 event_id=evt.metagame_event_id,
@@ -194,12 +153,12 @@ async def main() -> None:
             if RABBITMQ_ENABLED == 'True':
                 await rabbit.publish(bytes(json_event, encoding='utf-8'))
                 log.info(f'Event {unique_id} published')
-            # TODO: Replace result with unique_id
             # Add or remove from database
             if evt.metagame_event_state_name == 'started':
                 result = await alert.create(dict_event)
 
-                log.info(f'Created alert {result}')
+                log.info(f'Created alert {unique_id}')
+                log.debug(result)
             elif evt.metagame_event_state_name == 'ended' or 'cancelled':
                 await alert.remove(event_id=unique_id)
 
