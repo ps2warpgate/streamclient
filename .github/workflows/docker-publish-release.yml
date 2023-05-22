@@ -16,7 +16,7 @@ on:
 jobs:
   push_to_registries:
     # Don't run on pre-releases
-    if: !github.event.release.prerelease
+    if: "!github.event.release.prerelease"
     name: Push Docker image to Container registry
     runs-on: ubuntu-latest
     permissions:
