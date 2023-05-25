@@ -9,13 +9,16 @@ import auraxium
 from auraxium import event
 from auraxium.endpoints import NANITE_SYSTEMS
 from dotenv import load_dotenv
+from motor import motor_asyncio
+from pymongo.errors import CollectionInvalid
 from prometheus_client import Counter, Enum, Gauge, Info, start_http_server
+from pydantic.dataclasses import dataclass
 from pydantic.json import pydantic_encoder
 
 from constants import models
 from constants.typings import UniqueEventId
 from constants.utils import CustomFormatter, is_docker
-from services import Alert, Rabbit
+from services import Rabbit
 
 # Change secrets variables accordingly
 if is_docker() is False:  # Use .env file for secrets
@@ -28,7 +31,6 @@ RABBITMQ_ENABLED = os.getenv('RABBITMQ_ENABLED', 'True')
 RABBITMQ_URL = os.getenv('RABBITMQ_URL', None)
 MONGODB_URL = os.getenv('MONGODB_URL', None)
 MONGODB_DB = os.getenv('MONGODB_DB', 'warpgate')
-MONGODB_COLLECTION = os.getenv('MONGODB_COLLECTION', 'alerts')
 METRICS_PORT = os.getenv('METRICS_PORT', 8000)
 PURGE_STALE_ALERTS = os.getenv('PURGE_STALE_ALERTS', 'True')
 
@@ -40,12 +42,8 @@ log.addHandler(handler)
 
 
 rabbit = Rabbit()
-alert = Alert()
 
-alert_service = Enum(
-    name='alert_service_state',
-    documentation='state of the alert service',
-    states=['starting', 'running', 'stopped'])
+
 rabbit_service = Enum(
     name='rabbit_service_state',
     documentation='state of the rabbitmq service',
@@ -53,7 +51,8 @@ rabbit_service = Enum(
 )
 total_events = Counter(
     name='total_events',
-    documentation='total number of received events'
+    documentation='total number of received events',
+    labelnames=['event_name', 'world_id', 'zone_id']
 )
 in_progress_alerts = Gauge(
     name='in_progress_alerts',
@@ -67,6 +66,21 @@ census_status = Info(
     name='census_status',
     documentation='status of the census endpoint'
 )
+
+
+@dataclass
+class EventMetadata:
+    event_name: str
+    world_id: int
+    zone_id: int
+
+
+@dataclass
+class CensusEvent:
+    metadata: EventMetadata
+    timestamp: datetime
+    attacker_id: int
+    victim_id: int
 
 
 async def start_services() -> None:
@@ -83,31 +97,40 @@ async def start_services() -> None:
         log.info('RabbitMQ Service disabled by user')
         rabbit_service.state('stopped')
 
-    alert_service.state('stopped')
 
-    if not alert.is_ready:
-        alert_service.state('starting')
-        await alert.setup(
-            mongodb_url=MONGODB_URL,
-            db='warpgate_dev',
-            collection='alerts',
+async def setup_timeseries(mongo: motor_asyncio.AsyncIOMotorClient) -> None:
+    """Creates the timeseries collection for storing population-related events"""
+    db = mongo[MONGODB_DB]
+    try:
+        await db.create_collection(
+            name='realtime',
+            timeseries={
+                'metadata': EventMetadata,
+                'timestamp': datetime,
+                'attacker_id': int,
+                'victim_id': int
+            },
+            expireAfterSeconds=1800
         )
+    except CollectionInvalid:
+        log.info('Collection already exists!')
 
-    log.info('Alert Service ready!')
-    alert_service.state('running')
 
-
-async def purge_stale_alerts() -> None:
+async def purge_stale_alerts(mongo: motor_asyncio.AsyncIOMotorClient) -> None:
     """Removes alerts from the database that are older than 5400s (1h30m)"""
+    db = mongo[MONGODB_DB]
     max_age = datetime.utcnow().timestamp() - 5400  # Current POSIX timestamp minus 1h30m
     # List of alerts where timestamp < max_age
-    stale_alerts = await alert.read_many(length=30, query={'timestamp': {'$lt': max_age}})
+    stale_alerts: list[dict] = []
+    cursor = db.alerts.find({'timestamp': {'$lt': max_age}})
+    for document in await cursor.to_list(length=30):
+        stale_alerts.append(document)
     if len(stale_alerts) > 0:
-        log.info(f'Found {len(stale_alerts)} stale alert(s) in the database. Removing...')
         deleted_count = 0
         for i in stale_alerts:
-            deleted_count += await alert.remove(event_id=i['id'])
-        log.info(f'Stale alerts removed: {deleted_count}')
+            result = await db.alerts.delete_one({"id": i['id']})
+            deleted_count += result.deleted_count
+        log.info(f'Found and removed {deleted_count} stale alerts')
 
 
 async def main() -> None:
@@ -115,8 +138,12 @@ async def main() -> None:
 
     await start_services()
 
+    mongo = motor_asyncio.AsyncIOMotorClient(MONGODB_URL)
+    db = mongo[MONGODB_DB]
+    await setup_timeseries(mongo)
+
     if PURGE_STALE_ALERTS == 'True':
-        await purge_stale_alerts()
+        await purge_stale_alerts(mongo)
 
     async with auraxium.EventClient(service_id=API_KEY, ess_endpoint=NANITE_SYSTEMS) as client:
         log.info('Listening for Census Events...')
@@ -127,7 +154,7 @@ async def main() -> None:
 
             log.info(f'Received {evt.event_name} id: {unique_id}')
 
-            total_events.inc(1)
+            total_events.labels(evt.event_name, evt.world_id, evt.zone_id).inc()
             last_event_time.set(evt.timestamp.timestamp())
 
             event_data = models.MetagameEvent(
@@ -142,29 +169,59 @@ async def main() -> None:
                 xp=evt.experience_bonus,
                 timestamp=evt.timestamp.timestamp()
             )
-
             # Convert to dictionary and json
             dict_event = asdict(event_data)
             json_event = json.dumps(event_data, indent=4, default=pydantic_encoder)
-
             log.debug(dict_event)
-
             # Publish to RabbitMQ
             if RABBITMQ_ENABLED == 'True':
                 await rabbit.publish(bytes(json_event, encoding='utf-8'))
                 log.info(f'Event {unique_id} published')
             # Add or remove from database
             if evt.metagame_event_state_name == 'started':
-                result = await alert.create(dict_event)
+                await db.alerts.insert_one(dict_event)
 
                 log.info(f'Created alert {unique_id}')
-                log.debug(result)
             elif evt.metagame_event_state_name == 'ended' or 'cancelled':
-                await alert.remove(event_id=unique_id)
+                await db.alerts.delete_one({"id": unique_id})
 
                 log.info(f'Removed alert {unique_id}')
 
-        _ = on_metagame_event
+        @client.trigger(event.Death)
+        async def on_death(evt: event.Death) -> None:
+            event_data = CensusEvent(
+                metadata=EventMetadata(
+                    event_name=evt.event_name,
+                    world_id=evt.world_id,
+                    zone_id=evt.zone_id
+                ),
+                timestamp=evt.timestamp,
+                attacker_id=evt.attacker_character_id,
+                victim_id=evt.character_id
+            )
+            total_events.labels(evt.event_name, evt.world_id, evt.zone_id).inc()
+
+            dict_event = asdict(event_data)
+            result = await db.realtime.insert_one(dict_event)
+            log.debug(result.inserted_id)
+
+        @client.trigger(event.VehicleDestroy)
+        async def on_vehicle_destroy(evt: event.VehicleDestroy) -> None:
+            event_data = CensusEvent(
+                metadata=EventMetadata(
+                    event_name=evt.event_name,
+                    world_id=evt.world_id,
+                    zone_id=evt.zone_id
+                ),
+                timestamp=evt.timestamp,
+                attacker_id=evt.attacker_character_id,
+                victim_id=evt.character_id
+            )
+            total_events.labels(evt.event_name, evt.world_id, evt.zone_id).inc()
+
+            dict_event = asdict(event_data)
+            result = await db.realtime.insert_one(dict_event)
+            log.debug(result.inserted_id)
 
 
 if __name__ == '__main__':
