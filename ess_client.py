@@ -3,17 +3,17 @@ import json
 import logging.handlers
 import os
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import auraxium
 from auraxium import event
 from auraxium.endpoints import NANITE_SYSTEMS
 from dotenv import load_dotenv
 from motor import motor_asyncio
-from pymongo.errors import CollectionInvalid
 from prometheus_client import Counter, Enum, Gauge, Info, start_http_server
 from pydantic.dataclasses import dataclass
 from pydantic.json import pydantic_encoder
+from pymongo.errors import CollectionInvalid
 
 from constants import models
 from constants.typings import UniqueEventId
@@ -49,8 +49,8 @@ rabbit_service = Enum(
     documentation='state of the rabbitmq service',
     states=['starting', 'running', 'stopped']
 )
-total_events = Counter(
-    name='total_events',
+events_total = Counter(
+    name='events_total',
     documentation='total number of received events',
     labelnames=['event_name', 'world_id', 'zone_id']
 )
@@ -105,7 +105,12 @@ async def setup_timeseries(mongo: motor_asyncio.AsyncIOMotorClient) -> None:
         await db.create_collection(
             name='realtime',
             timeseries={
-                'metadata': EventMetadata,
+                'metadata': {
+                    'event_name': str,
+                    'world_id': int,
+                    'zone_id': int
+                },
+                # TODO: Fix 'bson.errors.InvalidDocument: cannot encode object: <class 'str'>, of type: <class 'type'>'
                 'timestamp': datetime,
                 'attacker_id': int,
                 'victim_id': int
@@ -117,9 +122,9 @@ async def setup_timeseries(mongo: motor_asyncio.AsyncIOMotorClient) -> None:
 
 
 async def purge_stale_alerts(mongo: motor_asyncio.AsyncIOMotorClient) -> None:
-    """Removes alerts from the database that are older than 5400s (1h30m)"""
+    """Removes alerts from the database that are older than 1h30m"""
     db = mongo[MONGODB_DB]
-    max_age = datetime.utcnow().timestamp() - 5400  # Current POSIX timestamp minus 1h30m
+    max_age = datetime.utcnow() - timedelta(hours=1, minutes=30)
     # List of alerts where timestamp < max_age
     stale_alerts: list[dict] = []
     cursor = db.alerts.find({'timestamp': {'$lt': max_age}})
@@ -154,7 +159,7 @@ async def main() -> None:
 
             log.info(f'Received {evt.event_name} id: {unique_id}')
 
-            total_events.labels(evt.event_name, evt.world_id, evt.zone_id).inc()
+            events_total.labels(evt.event_name, evt.world_id, evt.zone_id).inc()
             last_event_time.set(evt.timestamp.timestamp())
 
             event_data = models.MetagameEvent(
@@ -167,7 +172,7 @@ async def main() -> None:
                 tr=evt.faction_tr,
                 vs=evt.faction_vs,
                 xp=evt.experience_bonus,
-                timestamp=evt.timestamp.timestamp()
+                timestamp=evt.timestamp
             )
             # Convert to dictionary and json
             dict_event = asdict(event_data)
@@ -199,7 +204,7 @@ async def main() -> None:
                 attacker_id=evt.attacker_character_id,
                 victim_id=evt.character_id
             )
-            total_events.labels(evt.event_name, evt.world_id, evt.zone_id).inc()
+            events_total.labels(evt.event_name, evt.world_id, evt.zone_id).inc()
 
             dict_event = asdict(event_data)
             result = await db.realtime.insert_one(dict_event)
@@ -217,7 +222,7 @@ async def main() -> None:
                 attacker_id=evt.attacker_character_id,
                 victim_id=evt.character_id
             )
-            total_events.labels(evt.event_name, evt.world_id, evt.zone_id).inc()
+            events_total.labels(evt.event_name, evt.world_id, evt.zone_id).inc()
 
             dict_event = asdict(event_data)
             result = await db.realtime.insert_one(dict_event)
