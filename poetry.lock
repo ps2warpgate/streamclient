@@ -189,14 +189,14 @@ tests-no-zope = ["cloudpickle", "hypothesis", "mypy (>=1.1.1)", "pympler", "pyte
 
 [[package]]
 name = "auraxium"
-version = "0.2.3"
+version = "0.2.4"
 description = "A python wrapper for the PlanetSide 2 Census API."
 category = "main"
 optional = false
 python-versions = "*"
 files = [
-    {file = "auraxium-0.2.3-py3-none-any.whl", hash = "sha256:58cbc19d402c5e2394486e25a20bc2dac2edd2dc44c42486f0a2a1a25b8bae93"},
-    {file = "auraxium-0.2.3.tar.gz", hash = "sha256:81f34aebaa4024e3af44be898e6299e70ae08151dc36ed6cea3fc4bb45efd0c8"},
+    {file = "auraxium-0.2.4-py3-none-any.whl", hash = "sha256:0c6bb795e7a4da6916a1bd36e8ef3c03b0996ed181ba97836614a01dcf5336a5"},
+    {file = "auraxium-0.2.4.tar.gz", hash = "sha256:c2aee431a3774c85120db6e18bc590261450577e3bcc0d95212a4e20c65c9e03"},
 ]
 
 [package.dependencies]
@@ -1269,4 +1269,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "a3c89decd60bcf7a33344116687ec1c1e99394ebe775a9557182f30ab783e2a4"
+content-hash = "f66751c561d41bdf875899018ff160519a204acbbbe1cce642b8f4518d80d729"
