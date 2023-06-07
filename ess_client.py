@@ -155,7 +155,7 @@ async def main() -> None:
 
         @client.trigger(event.MetagameEvent)
         async def on_metagame_event(evt: event.MetagameEvent) -> None:
-            unique_id = str(UniqueEventId(evt.world_id, evt.instance_id))
+            unique_id = UniqueEventId(evt.world_id, evt.instance_id)
 
             log.info(f'Received {evt.event_name} id: {unique_id}')
 
