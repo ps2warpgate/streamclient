@@ -12,7 +12,7 @@ python-dotenv = "^1.0.0"
 motor = "^3.1.2"
 auraxium = "^0.2.3"
 aio-pika = "^9.0.7"
-prometheus-client = "^0.16.0"
+prometheus-client = "^0.17.1"
 pydantic = "^1.10.7"
 rich = "^13.3.5"
 
